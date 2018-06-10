@@ -1,0 +1,284 @@
+---
+title: "simul hw1"
+author: "JUHEE PARK"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+## EX1: compare Empirical Type I error rate
+
+
+```{r cars}
+ #Case1: chi square distribution
+
+emp.typ1.chi <- function(n,alpha,mu0) {
+  
+  m = 10000
+  I = numeric(m)
+  
+  for (j in 1:m) 
+    {
+    x = rchisq(n, df=1)
+    Tj = (mean(x) - mu0)/(sd(x)/sqrt(n))
+    if (abs(Tj) > qt(1-alpha/2,df=n-1)) I[j]=1
+    else I[j]=0
+    }
+  
+  TypeI = mean(I)
+  se.hat = sqrt(TypeI*(1-TypeI)/m)
+  return(c(TypeI,se.hat))
+}
+
+
+# Case2: uniform distribution
+
+emp.typ1.uni <- function(n,alpha,mu0) {
+  
+  m = 10000
+  I = numeric(m)
+  
+  for (j in 1:m) 
+  {
+    x = runif(n,0,2)
+    Tj = (mean(x) - mu0)/(sd(x)/sqrt(n))
+    if (abs(Tj) > qt(1-alpha/2,df=n-1)) I[j]=1
+    else I[j]=0
+  }
+  
+  TypeI = mean(I)
+  se.hat = sqrt(TypeI*(1-TypeI)/m)
+  return(c(TypeI,se.hat))
+}
+
+#case3: exponential
+
+emp.typ1.exp <- function(n,alpha,mu0) {
+  
+  m = 10000
+  I = numeric(m)
+  
+  for (j in 1:m) 
+  {
+    x = rexp(n,1)
+    Tj = (mean(x) - mu0)/(sd(x)/sqrt(n))
+    if (abs(Tj) > qt(1-alpha/2,df=n-1)) I[j]=1
+    else I[j]=0
+  }
+  
+  TypeI = mean(I)
+  se.hat = sqrt(TypeI*(1-TypeI)/m)
+  return(c(TypeI,se.hat))
+}
+```
+
+```{r}
+set.seed(123)
+
+result <- rbind( emp.typ1.chi(10,0.05,1), emp.typ1.chi(20,0.05,1), emp.typ1.chi(30,0.05,1),
+                 emp.typ1.uni(10,0.05,1), emp.typ1.uni(20,0.05,1), emp.typ1.uni(30,0.05,1),
+                 emp.typ1.exp(10,0.05,1), emp.typ1.exp(20,0.05,1), emp.typ1.exp(30,0.05,1))
+
+result <- as.data.frame(result)
+result$n <- rep(c(10,20,30),3)
+result$dist <- rep(c('chisq','uniform','exponential'),each=3)
+colnames(result) <- c('type1_error','std','n','dist')
+
+```
+
+
+```{r echo=FALSE, results = 'asis'}
+library(knitr)
+kable(result, format = "markdown", caption = "Empirical Type1 error rate according to distributions")
+```
+
+
+When the number of sample increases, empirical type 1 error rate become closes to nominal siginificance level, 0.05 and the standard deviation of type 1 error rate decreases. Among 3 distributions empirical type 1 error of uniform(0,2) distribution is the most approximately equal to 0.05. Plots of 3 distributions are presented below, with the red line implying the normal distribution. The normal distribution has mean 1 and sd is assumed to be the theoritical sd of 3 distributions.
+
+
+```{r pressure, echo=FALSE}
+par(mfrow=c(1,3))
+
+set.seed(123)
+
+rchi <- rchisq(10000,1)
+hist(rchi, prob=TRUE)
+num = seq(-10,10,0.01)
+lines(num,dnorm(num,1,2),col='red')
+
+runi <- runif(10000,0,2)
+hist(runi, prob=TRUE)
+lines(num,dnorm(num,1,1/3),col='red')
+
+rexp <- rexp(10000,1)
+hist(rexp, prob=TRUE)
+lines(num,dnorm(num,1,1),col='red')
+```
+
+
+## EX2: estimate the bias and standaard error of estimates using bootstrap 
+
+the likelihood of $\lambda$(rate of exponential distribution) is given by $\lambda^{12}$ * exp(-1297*$\lambda$) where 1297 is the sum of observations in aircondit dataset. Thus the mle of $\lambda$ of dataset is 12/1297 given by solving equation "12-1297*$\lambda$ = 0".
+
+```{r}
+# sample mle of lambda
+
+lambda0 <- 12/1297
+
+#set up the bootstrap
+library(boot)
+m = 10000
+n = nrow(aircondit)
+R = numeric(m)
+
+for (j in 1:m)
+{
+  i = sample(1:n, size = n, replace = TRUE)
+  boot.sample = aircondit[i,]
+  R[j] = 12/sum(boot.sample)
+}
+```
+
+```{r echo=FALSE, results = 'asis'}
+result <- as.data.frame(cbind(mean(R), sd(R), mean(R) - lambda0, (mean(R) - lambda0)/sd(R)))
+colnames(result) <- c('mean of boot', 'sd of boot', 'bias of boot','bias/sd')
+kable(result, format = "markdown", caption = "summary of bootstrap estimates")
+```
+
+bootstrap estimator of mle of lambda is 0.0105 which is a sample mean of bootstrap estimates. Because the ratio of bias and sd of booststrap estimates is greater than 0.25, we have to adjust bias for better estimation. Below histogram is the distribution of bootstrap samples. 
+
+```{r echo=FALSE}
+hist(R, prob = TRUE, nclass=100)
+```
+
+## EX3: bootstrap confidence interval for mean time between failures 
+
+The sample mean time between failures is \(\frac{1}{\lambda}\), \(\frac {1297}{12}\) = 108.0833. The booststrap confidence interval for sample mean is given below. In normal bootstrap C.I., bias is considered because bootstrap estimates in this case is not either sample mean or following normal distribution. In addition the sample size is small with 12 observation.
+
+```{r}
+# Sample Mean time
+mean0 <- 1/lambda0
+mean.j <- 1/R
+alpha = 0.05
+
+## bias
+
+bias <- mean(mean.j) - mean0 
+
+## Standard Normal Bootstrap Confidence Interval
+LB = (mean0-bias) - qnorm((1-alpha/2))*sd(mean.j)
+UB = (mean0-bias) + qnorm((1-alpha/2))*sd(mean.j)
+
+## Basic Bootstrap Confidence Interval
+basic = 2*mean0 - quantile(mean.j,prob=c((1-alpha/2),(alpha/2)))
+
+## Percentile Bootstrap Confidence Interval
+perce = quantile(mean.j,prob=c((alpha/2),(1-alpha/2)))
+
+## Better Bootstrap Confidence Interval
+
+conf <- 0.95
+alpha <- (1 + c(-conf,conf))/2
+
+zalpha <- qnorm(alpha)
+z0 <- qnorm(sum(mean.j < mean0)/m)
+jack.lambda <- numeric(n)
+for (i in 1:n)
+  { jack.lambda[i] <- mean(aircondit[-i,])}
+
+L <- mean(jack.lambda) - jack.lambda
+a <- sum(L^3)/(6*sum(L^2)^1.5)
+adj.alpha <- pnorm(z0 + (z0 + zalpha)/(1-a*(z0 + zalpha)))
+Better.CI <- quantile(mean.j,adj.alpha,type =6)
+
+```
+
+```{r echo=FALSE, results = 'asis'}
+ci <- as.data.frame(rbind (c(LB,UB), basic, perce))
+rownames(ci) <- c("normal","basic","percentile")
+colnames(ci) <- c("2.5%","97.5%")
+kable(ci, format = "markdown", caption = "3 types of bootstrap confidence interval")
+
+## better bootstrap interval with adjusted quantiles
+kable(t(Better.CI), format = "markdown", caption = "better bootstrap confidence interval")
+```
+
+
+## EX4: Simple linear regression with permutation test
+
+
+In simple linear regression an appropriate test stastistic for the two tailed test is the square of the correlation( MJ ANDERSON,2001). Model is given by $Y$=$\beta$$X$+$\epsilon$. For standardized data, test statistic has a form of \(\frac{(\sum_{i=1}^{n} X_i Y_i^\pi)^2}{(\sum_{i=1}^{n} X_i^2 \sum_{i=1}^{n}Y_i^2)}\). $Y_i^\pi$ is permuted sample of $Y$ and $X$ is fixed data.
+\(\sum_{i=1}^{n} X_i^2\sum_{i=1}^{n} Y_i^2\) is a constant so only \((\sum_{i=1}^{n} X_i Y_i^\pi)^2\) part matters. 
+Thus below code, test statistic will be the \((\sum_{i=1}^{n} X_i Y_i^\pi)^2\). Total number of permuted sample is 10!,3628800. This is such a big number, so approximate permutation test is needed.
+
+```{r}
+x= c(1:10)
+y= c(0.701,3.555,1.634,4.031,5.199,4.595,4.843,3.782,5.715,8.025)
+c_x = x-mean(x)
+c_y = y-mean(y) ##centered data to make sample mean equal to zero
+
+dat <- cbind(c_x, c_y)
+colnames(dat)<-c('new_x','new_y')
+dat <- as.data.frame(dat)
+
+## approximate permutation: using 10000 sample
+
+m = 10000
+T0 <- sum(dat$new_y * dat$new_x)^2
+TP <- numeric(m)
+index <- matrix(0,nrow=m,ncol=nrow(dat))
+
+for (i in 1:m){
+  index = sample(1:nrow(dat),nrow(dat),replace = FALSE)
+  p_y <- dat$new_y[index]
+  TP[i] <- sum(p_y * dat$new_x)^2 ## test statistic
+}
+```
+
+```{r}
+ASL = (1+sum(TP >= T0)) / (m+1)
+ASL
+```
+p-value is 0.0015. Thus, under the 5% significance level null hypothesis are rejected. We can conclude that relationship between X and Y exists that X influence Y in positive direction. 
+```{r}
+fit <- lm(y ~ x -1)
+summary(fit)
+```
+If we do t-test as like usual case, we can get same result that X influence Y in positive direction and that is significant under 5% significance level.
+
+## EX5: Estimate theta using the EM algorithm
+
+```{r}
+
+EM <- function(x,initial, epsilon=0.0001){
+  
+  theta0 <- initial
+  error <- 1
+  num <- 0
+  
+  while (error > epsilon) {
+    
+    # E-step
+    
+    Eu2 <- (x[1]* theta0/4)/(0.5+theta0/4)
+    
+    # M-step
+    
+    ntheta <- (Eu2+x[4])/(Eu2+ sum(x[2:4]))
+    
+    #
+    error <- abs(ntheta-theta0)
+    theta0 <- ntheta
+    num <- num+1
+    print (c(theta0,num))
+    }
+  }
+
+EM(c(24,5,6,5),0.5)
+```
+When give epsilon=0.0001, after 5 iteration $\theta$ converges to 0.4639174.
+
+
